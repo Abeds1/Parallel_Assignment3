@@ -1,0 +1,86 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+
+#define TILE_SIZE 16 // Define the tile size
+
+__global__ void matrixMul(int *a, int *b, int *c, int n) {
+    __shared__ int tileA[TILE_SIZE][TILE_SIZE];
+    __shared__ int tileB[TILE_SIZE][TILE_SIZE];
+
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int val = 0;
+
+    for (int i = 0; i < gridDim.x; i++) {
+        tileA[threadIdx.y][threadIdx.x] = a[row * n + i * TILE_SIZE + threadIdx.x];
+        tileB[threadIdx.y][threadIdx.x] = b[(i * TILE_SIZE + threadIdx.y) * n + col];
+        __syncthreads();
+
+        for (int k = 0; k < TILE_SIZE; k++) {
+            val += tileA[threadIdx.y][k] * tileB[k][threadIdx.x];
+        }
+        __syncthreads();
+    }
+
+    c[row * n + col] = val;
+}
+
+int main() {
+    int n = 1024; // Matrix size
+    int *a, *b, *c;
+    int *d_a, *d_b, *d_c;
+    int size = n * n * sizeof(int);
+
+    // Allocate memory for matrices on host
+    a = (int *)malloc(size);
+    b = (int *)malloc(size);
+    c = (int *)malloc(size);
+
+    // Initialize matrices
+    for (int i = 0; i < n * n; i++) {
+        a[i] = rand() % 10;
+        b[i] = rand() % 10;
+    }
+
+    // Allocate memory for matrices on device
+    cudaMalloc((void **)&d_a, size);
+    cudaMalloc((void **)&d_b, size);
+    cudaMalloc((void **)&d_c, size);
+
+    // Copy matrices from host to device
+    cudaMemcpy(d_a, a, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b, size, cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 dimGrid(n / TILE_SIZE, n / TILE_SIZE);
+    dim3 dimBlock(TILE_SIZE, TILE_SIZE);
+
+    // Start timer
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    // Launch kernel
+    matrixMul<<<dimGrid, dimBlock>>>(d_a, d_b, d_c, n);
+
+    // End timer
+    gettimeofday(&end, NULL);
+    float elapsedTime = (end.tv_sec - start.tv_sec) * 1000.0; // Convert to milliseconds
+    elapsedTime += (end.tv_usec - start.tv_usec) / 1000.0;
+    printf("Elapsed time: %.2f ms\n", elapsedTime);
+
+    // Copy result back to host
+    cudaMemcpy(c, d_c, size, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+
+    // Free host memory
+    free(a);
+    free(b);
+    free(c);
+
+    return 0;
+}
