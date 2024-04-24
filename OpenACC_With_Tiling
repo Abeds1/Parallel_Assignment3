@@ -1,0 +1,74 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+
+#define TILE_SIZE 32
+
+// Function to allocate memory for a matrix
+float** allocateMatrix(int rows, int cols) {
+    float** matrix = (float**)malloc(rows * sizeof(float*));
+    for (int i = 0; i < rows; i++) {
+        matrix[i] = (float*)malloc(cols * sizeof(float));
+    }
+    return matrix;
+}
+
+// Function to initialize a matrix with random values
+void initializeMatrix(float** matrix, int rows, int cols) {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            matrix[i][j] = (float)rand() / RAND_MAX; // Random value between 0 and 1
+        }
+    }
+}
+
+// Function to free memory allocated for a matrix
+void freeMatrix(float** matrix, int rows) {
+    for (int i = 0; i < rows; i++) {
+        free(matrix[i]);
+    }
+    free(matrix);
+}
+
+// Function to perform matrix multiplication with tiling
+void matrixMultiply(float** A, float** B, float** C, int rowsA, int colsA, int colsB) {
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < rowsA; i += TILE_SIZE) {
+        for (int j = 0; j < colsB; j += TILE_SIZE) {
+            for (int k = 0; k < colsA; k += TILE_SIZE) {
+                for (int ii = i; ii < i + TILE_SIZE; ii++) {
+                    for (int jj = j; jj < j + TILE_SIZE; jj++) {
+                        for (int kk = k; kk < k + TILE_SIZE; kk++) {
+                            C[ii][jj] += A[ii][kk] * B[kk][jj];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+int main() {
+    const int size = 1024;
+    float** A = allocateMatrix(size, size);
+    float** B = allocateMatrix(size, size);
+    float** C = allocateMatrix(size, size);
+
+    initializeMatrix(A, size, size);
+    initializeMatrix(B, size, size);
+
+    double start_time = omp_get_wtime();
+
+    matrixMultiply(A, B, C, size, size, size);
+
+    double end_time = omp_get_wtime();
+    double elapsed_time = end_time - start_time;
+
+    printf("Time taken for matrix multiplication with tiling: %.6f seconds\n", elapsed_time);
+
+    freeMatrix(A, size);
+    freeMatrix(B, size);
+    freeMatrix(C, size);
+
+    return 0;
+}
